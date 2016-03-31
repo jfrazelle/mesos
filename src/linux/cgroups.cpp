@@ -555,24 +555,27 @@ bool enabled()
 
 Try<set<string>> hierarchies()
 {
-  // Read currently mounted file systems from /proc/mounts.
-  Try<fs::MountTable> table = fs::MountTable::read("/proc/mounts");
+  // Read currently mounted file systems from /proc/self/mountinfo.
+  Try<fs::MountInfoTable> table = fs::MountInfoTable::read();
   if (table.isError()) {
     return Error(table.error());
   }
 
   set<string> results;
-  foreach (const fs::MountTable::Entry& entry, table.get().entries) {
+  foreach (const fs::MountInfoTable::Entry& entry, table.get().entries) {
     if (entry.type == "cgroup") {
-      Result<string> realpath = os::realpath(entry.dir);
+      Result<string> realpath = os::realpath(entry.target);
       if (!realpath.isSome()) {
         return Error(
-            "Failed to determine canonical path of " + entry.dir + ": " +
-            (realpath.isError()
-             ? realpath.error()
-             : "No such file or directory"));
+          "Failed to determine canonical path of " + entry.target + ": " +
+          (realpath.isError() ? realpath.error()
+                              : "No such file or directory"));
       }
-      results.insert(realpath.get());
+      if (entry.root!="/"){
+        results.insert(path::join(entry.target, entry.root));
+      } else {
+        results.insert(entry.target);
+      }
     }
   }
 
@@ -680,47 +683,28 @@ Try<set<string>> subsystems()
 
 Try<set<string>> subsystems(const string& hierarchy)
 {
-  // We compare the canonicalized absolute paths.
-  Result<string> hierarchyAbsPath = os::realpath(hierarchy);
-  if (!hierarchyAbsPath.isSome()) {
-    return Error(
-        "Failed to determine canonical path of '" + hierarchy + "': " +
-        (hierarchyAbsPath.isError()
-         ? hierarchyAbsPath.error()
-         : "No such file or directory"));
-  }
-
-  // Read currently mounted file systems from /proc/mounts.
-  Try<fs::MountTable> table = fs::MountTable::read("/proc/mounts");
+  // Read currently mounted file systems from /proc/self/mountinfo.
+  Try<fs::MountInfoTable> table = fs::MountInfoTable::read();
   if (table.isError()) {
     return Error("Failed to read mount table: " + table.error());
   }
 
   // Check if hierarchy is a mount point of type cgroup.
-  Option<fs::MountTable::Entry> hierarchyEntry;
-  foreach (const fs::MountTable::Entry& entry, table.get().entries) {
+  Option<fs::MountInfoTable::Entry> hierarchyEntry;
+  foreach (const fs::MountInfoTable::Entry& entry, table.get().entries) {
     if (entry.type == "cgroup") {
-      Result<string> dirAbsPath = os::realpath(entry.dir);
-      if (!dirAbsPath.isSome()) {
-        return Error(
-            "Failed to determine canonical path of '" + entry.dir + "': " +
-            (dirAbsPath.isError()
-             ? dirAbsPath.error()
-             : "No such file or directory"));
+      Option<string> dirPath;
+      if (entry.root != "/") {
+        dirPath = path::join(entry.target, entry.root);
+      } else {
+        dirPath = entry.target;
       }
 
-      // Seems that a directory can be mounted more than once.
-      // Previous mounts are obscured by the later mounts. Therefore,
-      // we must see all entries to make sure we find the last one
-      // that matches.
-      if (dirAbsPath.get() == hierarchyAbsPath.get()) {
+      if (dirPath.get() == hierarchy) {
         hierarchyEntry = entry;
+        break;
       }
     }
-  }
-
-  if (hierarchyEntry.isNone()) {
-    return Error("'" + hierarchy + "' is not a valid hierarchy");
   }
 
   // Get the intersection of the currently enabled subsystems and
@@ -733,7 +717,7 @@ Try<set<string>> subsystems(const string& hierarchy)
 
   set<string> result;
   foreach (const string& name, names.get()) {
-    if (hierarchyEntry.get().hasOption(name)) {
+    if (hierarchyEntry.get().fsOptions.find(name) != std::string::npos) {
       result.insert(name);
     }
   }

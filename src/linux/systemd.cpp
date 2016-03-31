@@ -21,21 +21,26 @@
 
 #include <process/once.hpp>
 
+#include <stout/foreach.hpp>
 #include <stout/os.hpp>
 #include <stout/strings.hpp>
 #include <stout/try.hpp>
 
 #include "linux/cgroups.hpp"
+#include "linux/fs.hpp"
 
 using process::Once;
 
 using std::string;
 using std::vector;
 
+using mesos::internal::fs::MountInfoTable;
+
 namespace systemd {
 
 int DELEGATE_MINIMUM_VERSION = 218;
 
+const string DEFAULT_CGROUPS_HIERARCHY = "/sys/fs/cgroup";
 
 Flags::Flags()
 {
@@ -51,10 +56,11 @@ Flags::Flags()
       "The path to the systemd system run time directory\n",
       "/run/systemd/system");
 
-  add(&Flags::cgroups_hierarchy,
-      "cgroups_hierarchy",
-      "The path to the cgroups hierarchy root\n",
-      "/sys/fs/cgroup");
+  add(
+    &Flags::cgroups_hierarchy,
+    "cgroups_hierarchy",
+    "The path to the cgroups hierarchy root\n",
+    DEFAULT_CGROUPS_HIERARCHY);
 }
 
 
@@ -126,6 +132,24 @@ Try<Nothing> initialize(const Flags& flags)
   if (!os::exists(CHECK_NOTNULL(systemd_flags)->runtime_directory)) {
     return Error("Failed to locate systemd runtime directory: " +
                  CHECK_NOTNULL(systemd_flags)->runtime_directory);
+  }
+
+  // If not overridding the default flag value, try to find the root hierarchy
+  // from /proc/self/mountinfo.
+  if (systemd_flags->cgroups_hierarchy == DEFAULT_CGROUPS_HIERARCHY) {
+    Try<MountInfoTable> mountTable = MountInfoTable::read();
+
+    if (mountTable.isError()) {
+      return Error("Failed to read mount table: " + mountTable.error());
+    }
+
+    // Find the cgroup mount.
+    foreach (const MountInfoTable::Entry& entry, mountTable.get().entries) {
+      if (entry.type == "cgroup") {
+        systemd_flags->cgroups_hierarchy = path::join(entry.target, entry.root);
+        break;
+      }
+    }
   }
 
   // On systemd environments we currently migrate executor pids and processes
@@ -271,10 +295,8 @@ Path runtimeDirectory()
 
 Path hierarchy()
 {
-  return Path(path::join(flags().cgroups_hierarchy, "systemd"));
+  return Path(flags().cgroups_hierarchy);
 }
-
-
 Try<Nothing> daemonReload()
 {
   Try<string> daemonReload = os::shell("systemctl daemon-reload");

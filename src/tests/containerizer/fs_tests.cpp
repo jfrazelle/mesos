@@ -145,6 +145,32 @@ TEST_F(FsTest, MountInfoTableParse)
   EXPECT_EQ("shared:2", entry.get().optionalFields);
   EXPECT_EQ("ext4", entry.get().type);
   EXPECT_EQ("/dev/sda1", entry.get().source);
+
+  // Parse a cgroup mount.
+  const string cgroupMount =
+    "369 368 0:22 "
+    "/docker/32202c2e389e57780db3e378ead5f817d644f57d7fbd2b1cfd2a3d292cadfd49 "
+    "/sys/fs/cgroup/systemd ro,nosuid,nodev,noexec,relatime - cgroup cgroup "
+    "rw,xattr,release_agent=/lib/systemd/systemd-cgroups-agent,name=systemd";
+  entry = MountInfoTable::Entry::parse(cgroupMount);
+
+  ASSERT_SOME(entry);
+  EXPECT_EQ(369, entry.get().id);
+  EXPECT_EQ(368, entry.get().parent);
+  EXPECT_EQ(makedev(0, 22), entry.get().devno);
+  EXPECT_EQ(
+    "/docker/32202c2e389e57780db3e378ead5f817d64"
+    "4f57d7fbd2b1cfd2a3d292cadfd49",
+    entry.get().root);
+  EXPECT_EQ("/sys/fs/cgroup/systemd", entry.get().target);
+  EXPECT_EQ("ro,nosuid,nodev,noexec,relatime", entry.get().vfsOptions);
+  EXPECT_EQ(
+    "rw,xattr,release_agent=/lib/systemd"
+    "/systemd-cgroups-agent,name=systemd",
+    entry.get().fsOptions);
+  EXPECT_EQ("", entry.get().optionalFields);
+  EXPECT_EQ("cgroup", entry.get().type);
+  EXPECT_EQ("cgroup", entry.get().source);
 }
 
 

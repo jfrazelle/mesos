@@ -744,6 +744,34 @@ Try<Nothing> classid(
 
 } // namespace net_cls {
 
+// Pids controls.
+namespace pids {
+
+// Returns the cgroup that the specified pid is a member of within the
+// hierarchy that the 'pids' subsytem is mounted or None if the
+// subsystem is not mounted or the pid is not a member of a cgroup.
+Result<std::string> cgroup(pid_t pid);
+
+
+// Sets the pids max using pids.max.
+Try<Nothing> max(
+    const std::string& hierarchy,
+    const std::string& cgroup,
+    uint64_t max);
+
+// Returns the pids max using pids.max.
+Try<uint64_t> max(
+    const std::string& hierarchy,
+    const std::string& cgroup);
+
+// Returns the pids current from pids.current.
+Try<uint64_t> current(
+    const std::string& hierarchy,
+    const std::string& cgroup);
+
+
+} // namespace pids {
+
 } // namespace cgroups {
 
 namespace std {

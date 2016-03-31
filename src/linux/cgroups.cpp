@@ -2747,4 +2747,57 @@ Try<Nothing> classid(
 
 } // namespace net_cls {
 
+namespace pids {
+
+Result<string> cgroup(pid_t pid)
+{
+  return internal::cgroup(pid, "pids");
+}
+Try<Nothing> max(
+    const string& hierarchy,
+    const string& cgroup,
+    uint64_t max)
+{
+  return cgroups::write(hierarchy, cgroup, "pids.max", stringify(max));
+}
+
+
+Try<uint64_t> max(
+    const string& hierarchy,
+    const string& cgroup)
+{
+  Try<string> read = cgroups::read(hierarchy, cgroup, "pids.max");
+
+  if (read.isError()) {
+    return Error(read.error());
+  }
+
+  uint64_t max;
+  istringstream ss(read.get());
+
+  ss >> max;
+
+  return max;
+}
+
+Try<uint64_t> current(
+    const string& hierarchy,
+    const string& cgroup)
+{
+  Try<string> read = cgroups::read(hierarchy, cgroup, "pids.current");
+
+  if (read.isError()) {
+    return Error(read.error());
+  }
+
+  uint64_t current;
+  istringstream ss(read.get());
+
+  ss >> current;
+
+  return current;
+}
+
+} // namespace pids {
+
 } // namespace cgroups {
